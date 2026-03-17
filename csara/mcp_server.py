@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from mcp.server.fastmcp import FastMCP
 from search import run_search
-from store import run_store, run_forget, run_forget_skill, run_list_skills
+from store import run_store, run_forget, run_forget_skill, run_list_skills, run_create_skill
 
 mcp = FastMCP("csara")
 
@@ -62,5 +62,20 @@ def csara_list_skills() -> str:
     return run_list_skills()
 
 
+@mcp.tool()
+def csara_create_skill(name: str, summary: str, keywords: list[str], core_rules: str) -> str:
+    """Create a new skill in CSara. Use this when you notice a recurring technology,
+    framework, or domain the user works with that is worth tracking conventions for.
+
+    Args:
+        name: Short lowercase identifier for the skill (e.g. react, postgres, docker)
+        summary: One sentence describing what this skill covers
+        keywords: List of trigger words that will activate this skill during search (5-10 words)
+        core_rules: The initial core rules as a markdown bullet list (e.g. '- Rule one\n- Rule two')
+    """
+    return run_create_skill(name, summary, keywords, core_rules)
+
+
 if __name__ == "__main__":
+    mcp.run(transport="stdio")
     mcp.run(transport="stdio")

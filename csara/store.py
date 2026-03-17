@@ -170,6 +170,53 @@ def _list_skills() -> None:
         print(f"    keywords: {keywords}")
 
 
+def _create_skill(name: str, summary: str, keywords: list[str], core_rules: str) -> None:
+    skill_dir = os.path.join(CSARA_DIR, "skills", name)
+    if os.path.exists(skill_dir):
+        print(f"CSara: skill '{name}' already exists. Use csara_store to add to it.")
+        return
+    os.makedirs(skill_dir)
+
+    meta = {
+        "skill": name,
+        "summary": summary,
+        "trigger_keywords": keywords,
+        "complexity_threshold": 0.7,
+        "layers": {
+            "core": {"path": f"skills/{name}/core.md", "load": "always"},
+            "failures": {"path": f"skills/{name}/failures.md", "load": "if_debugging"},
+            "edge_cases": {"path": f"skills/{name}/edge_cases.md", "load": "if_complex"}
+        }
+    }
+    skill_meta_path = os.path.join(skill_dir, "meta.json")
+    with open(skill_meta_path, "w", encoding="utf-8") as f:
+        json.dump(meta, f, indent=2)
+        f.write("\n")
+
+    with open(os.path.join(skill_dir, "core.md"), "w", encoding="utf-8") as f:
+        f.write(f"# {name.title()} Core\n\n{core_rules}\n")
+    open(os.path.join(skill_dir, "failures.md"), "w").close()
+    open(os.path.join(skill_dir, "edge_cases.md"), "w").close()
+
+    index = _load_json("index.json")
+    index.setdefault("skills", {})[name] = {
+        "summary": summary,
+        "trigger_keywords": keywords
+    }
+    _save_json("index.json", index)
+
+    print(f"CSara: skill '{name}' created.")
+
+
+def run_create_skill(name: str, summary: str, keywords: list[str], core_rules: str) -> str:
+    """Callable entry point for MCP server."""
+    import io, contextlib
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        _create_skill(name, summary, keywords, core_rules)
+    return buf.getvalue().strip() or "CSara: done."
+
+
 DETAIL_THRESHOLD = 200  # raw text longer than this gets saved to detail/
 
 
