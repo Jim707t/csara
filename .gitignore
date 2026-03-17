@@ -1,0 +1,25 @@
+# API key and secrets
+csara/.env
+
+# Personal memory — atoms, detail files, indexes
+csara/memory/atoms/*
+csara/memory/detail/*
+csara/memory/index/*
+!csara/memory/atoms/.gitkeep
+!csara/memory/detail/.gitkeep
+!csara/memory/index/.gitkeep
+
+# Master index (contains personal memory atom IDs and content summaries)
+csara/index.json
+
+# Personal skills content
+csara/skills/*
+!csara/skills/.gitkeep
+
+# Python virtual environment
+csara/.venv/
+
+# Python cache
+**/__pycache__/
+**/*.pyc
+**/*.pyo
