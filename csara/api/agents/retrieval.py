@@ -50,7 +50,9 @@ def get_relevant_atoms(query: str, index_content: dict, keyword_hits: dict) -> l
         with open(atom_path, "r", encoding="utf-8") as f:
             atom = json.load(f)
         content = atom.get("content", "")
-        candidate_summaries.append(f"[{aid}] {content[:200]}")
+        source = atom.get("source_task", "")
+        summary = f"{source} | {content}" if source else content
+        candidate_summaries.append(f"[{aid}] {summary[:300]}")
 
     if not candidate_summaries:
         return sorted_ids[:8]
@@ -66,7 +68,7 @@ def get_relevant_atoms(query: str, index_content: dict, keyword_hits: dict) -> l
             # Validate all returned IDs were in our candidates
             valid = [aid for aid in reranked if aid in keyword_hits]
             _dbg(f"reranked result: {valid}")
-            return valid if valid else sorted_ids[:8]
+            return valid  # trust Claude's judgment, even if empty
     except Exception as e:
         _dbg(f"rerank failed: {e}, falling back to score sort")
 
