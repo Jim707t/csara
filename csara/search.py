@@ -102,11 +102,7 @@ def main():
         atom_ids = get_relevant_atoms(query, index_content, keyword_hits)
     _dbg(f"final atom_ids: {atom_ids}", debug)
 
-    # Read atom content
-    atom_text = read_atoms(atom_ids) if atom_ids else ""
-    _dbg(f"atom_text length: {len(atom_text)} chars", debug)
-
-    # Load skill content
+    # Load skill content BEFORE atoms (needed for dedup)
     skill_sections = []
     query_lower = query.lower()
     word_count = len(query.split())
@@ -142,6 +138,28 @@ def main():
         if parts:
             skill_sections.append((skill_name, "\n\n".join(parts)))
             _dbg(f"skill '{skill_name}' loaded {len(parts)} layer(s)", debug)
+
+    # Filter atoms whose content is already in skill text (skill dedup)
+    if atom_ids and skill_sections:
+        all_skill_text = "\n".join(content for _, content in skill_sections)
+        filtered_ids = []
+        for aid in atom_ids:
+            atom_path = os.path.join(CSARA_DIR, "memory", "atoms", f"{aid}.json")
+            if not os.path.exists(atom_path):
+                filtered_ids.append(aid)
+                continue
+            with open(atom_path, "r", encoding="utf-8") as f:
+                atom = json.load(f)
+            content = atom.get("content", "").strip().rstrip(".,;:!?")
+            if content and content in all_skill_text:
+                _dbg(f"  skipping {aid} — content already in skill", debug)
+            else:
+                filtered_ids.append(aid)
+        atom_ids = filtered_ids
+
+    # Read atom content
+    atom_text = read_atoms(atom_ids) if atom_ids else ""
+    _dbg(f"atom_text length: {len(atom_text)} chars", debug)
 
     # Output
     if not atom_text and not skill_sections:
@@ -197,8 +215,8 @@ def _do_search(query: str, debug: bool) -> None:
     index_content = _load_json("index.json")
     relevant_skills = get_relevant_skills(query, index_content)
     atom_ids = get_relevant_atoms(query, index_content, keyword_hits) if keyword_hits else []
-    atom_text = read_atoms(atom_ids) if atom_ids else ""
 
+    # Load skill content BEFORE atoms (needed for dedup)
     query_lower = query.lower()
     word_count = len(query.split())
     skill_sections = []
@@ -220,6 +238,26 @@ def _do_search(query: str, debug: bool) -> None:
                 parts.append(e)
         if parts:
             skill_sections.append((skill_name, "\n\n".join(parts)))
+
+    # Filter atoms whose content is already in skill text (skill dedup)
+    if atom_ids and skill_sections:
+        all_skill_text = "\n".join(content for _, content in skill_sections)
+        filtered_ids = []
+        for aid in atom_ids:
+            atom_path = os.path.join(CSARA_DIR, "memory", "atoms", f"{aid}.json")
+            if not os.path.exists(atom_path):
+                filtered_ids.append(aid)
+                continue
+            with open(atom_path, "r", encoding="utf-8") as f:
+                atom = json.load(f)
+            content = atom.get("content", "").strip().rstrip(".,;:!?")
+            if content and content in all_skill_text:
+                _dbg(f"  skipping {aid} — content already in skill", debug)
+            else:
+                filtered_ids.append(aid)
+        atom_ids = filtered_ids
+
+    atom_text = read_atoms(atom_ids) if atom_ids else ""
 
     if not atom_text and not skill_sections:
         print("=== CSara Memory ===")
