@@ -13,44 +13,34 @@ def _load_json(rel_path: str) -> dict:
 
 
 def keyword_search(keywords: list) -> dict:
-    tag_index = _load_json(os.path.join("memory", "index", "tag_index.json"))
-    index = _load_json("index.json")
-    atoms = index.get("atoms", {})
+    word_index = _load_json(os.path.join("memory", "index", "word_index.json"))
 
     scores = {}
 
     for keyword in keywords:
         kw = keyword.lower()
-        already_counted = set()
 
-        # Check tag_index (exact match, case insensitive)
-        for tag_key, atom_ids in tag_index.items():
-            if tag_key.lower() == kw:
-                for aid in atom_ids:
-                    scores[aid] = scores.get(aid, 0) + 1
-                    already_counted.add(aid)
-
-        # Scan content field in index.json atoms (substring match)
-        for aid, atom_info in atoms.items():
-            if aid in already_counted:
-                continue
-            content = atom_info.get("content", "").lower()
-            if kw in content:
+        # Check word_index for exact match
+        if kw in word_index:
+            for aid in word_index[kw]:
                 scores[aid] = scores.get(aid, 0) + 1
+
+        # Also check substring matches in word_index keys
+        # e.g. searching "sqrt" matches "math-sqrt" or "sqrt144"
+        for indexed_word, atom_ids in word_index.items():
+            if indexed_word == kw:
+                continue  # already counted
+            if kw in indexed_word or indexed_word in kw:
+                for aid in atom_ids:
+                    if aid not in scores or scores[aid] < 1:
+                        scores[aid] = scores.get(aid, 0) + 0.5
 
     if not scores:
         return {}
 
-    # Threshold filter: keep atoms matching at least half the keywords, capped at 4
-    import math
-    min_score = max(1, min(math.ceil(len(keywords) / 2), 4))
-    filtered = {aid: s for aid, s in scores.items() if s >= min_score}
-
-    if not filtered:
-        return {}
-
-    # Sort by score descending, cap at 30
-    sorted_ids = sorted(filtered.keys(), key=lambda x: filtered[x], reverse=True)
+    # With full-text word_index, even 1 keyword match is meaningful.
+    # Sort by score descending, cap at 30.
+    sorted_ids = sorted(scores.keys(), key=lambda x: scores[x], reverse=True)
     if len(sorted_ids) > 30:
         sorted_ids = sorted_ids[:30]
-    return {aid: filtered[aid] for aid in sorted_ids}
+    return {aid: scores[aid] for aid in sorted_ids}

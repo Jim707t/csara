@@ -25,17 +25,16 @@ Store ONLY if you find one of these:
 
 If none of these are present, return: null
 
-If you find something, return a JSON object with exactly these 3 fields:
+If you find something, return a JSON object with exactly these 2 fields:
 {
   "type": "preference",
-  "content": "one or two sentence summary, plain language",
-  "tags": ["tag1", "tag2"]
+  "content": "summary preserving specific details"
 }
 
 Rules:
 - type must be one of: preference, fix, pattern, constraint, correction
-- content must be 1-2 sentences max
-- tags must be 2-5 lowercase single-word or hyphenated keywords
+- content must be 1-3 sentences max
+- CRITICAL: preserve specific commands, tool names, code snippets, file paths, and function names in content. Do NOT abstract them into vague guidelines. For example, write "Use `wc -l` in bash or `Get-Content file | Measure-Object -Line` in PowerShell to count lines" NOT "User follows coding guidelines about file sizes."
 - Return ONLY the JSON object or the word null. No explanation. No markdown."""
 
 
@@ -61,12 +60,12 @@ Extract memory or return null."""
     try:
         result = json.loads(response.strip())
         if isinstance(result, dict) and "type" in result and "content" in result:
-            # Claude only decides type, content, tags — code fills the rest
+            # Claude only decides type + content — keywords auto-extracted by code
             atom_dict = {
                 "type": result["type"],
                 "content": result["content"],
                 "content_path": None,
-                "tags": result.get("tags", []),
+                "tags": [],
                 "strength": 0.9,
                 "source_task": task_input[:100],
                 "edges": {
@@ -81,7 +80,6 @@ Extract memory or return null."""
             }
             _dbg(f"AI decision: STORE as type={atom_dict['type']!r}")
             _dbg(f"  content: {atom_dict['content']!r}")
-            _dbg(f"  tags: {atom_dict['tags']}")
             return atom_dict
     except json.JSONDecodeError as e:
         _dbg(f"JSON parse failed: {e}")
@@ -97,15 +95,14 @@ Decide which version is more useful to keep.
 
 Rules:
 - If the new info adds nothing over the existing memory, return: "keep"
-- If the new info is richer, more specific, or corrects the old, return a JSON object with exactly these 3 fields:
+- If the new info is richer, more specific, or corrects the old, return a JSON object with exactly these 2 fields:
 {
   "type": "preference",
-  "content": "one or two sentence summary combining the best of both",
-  "tags": ["tag1", "tag2"]
+  "content": "one or two sentence summary combining the best of both"
 }
 - type must be one of: preference, fix, pattern, constraint, correction
-- content must be 1-2 sentences max
-- tags must be 2-5 lowercase single-word or hyphenated keywords
+- content must be 1-3 sentences max
+- CRITICAL: preserve specific commands, tool names, code snippets, and function names
 - Return ONLY the JSON object or the word "keep". No explanation. No markdown."""
 
 
@@ -115,7 +112,6 @@ def judge_duplicate(task_input: str, task_output: str,
     Returns atom dict if replace, None if keep old."""
     user_message = f"""EXISTING memory:
 Content: {old_content}
-Tags: {', '.join(old_tags)}
 
 NEW information:
 Input: {task_input}
@@ -142,7 +138,7 @@ Should we keep the existing memory or replace with the new info?"""
                 "type": result["type"],
                 "content": result["content"],
                 "content_path": None,
-                "tags": result.get("tags", []),
+                "tags": [],
                 "strength": 0.9,
                 "source_task": task_input[:100],
                 "edges": {
@@ -157,7 +153,6 @@ Should we keep the existing memory or replace with the new info?"""
             }
             _dbg(f"judge decision: REPLACE with type={atom_dict['type']!r}")
             _dbg(f"  content: {atom_dict['content']!r}")
-            _dbg(f"  tags: {atom_dict['tags']}")
             return atom_dict
     except json.JSONDecodeError as e:
         _dbg(f"judge JSON parse failed: {e}")

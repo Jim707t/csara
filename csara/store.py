@@ -7,9 +7,10 @@ from datetime import date
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from ops.consolidate import consolidate
-from ops.write import write_atom, replace_atom
+from ops.write import write_atom, replace_atom, extract_keywords, STOP_WORDS
 from ops.search import keyword_search
 from api.agents.consolidator import judge_duplicate
+from api.agents.skill_updater import update_skill_file
 import re
 
 CSARA_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -58,17 +59,11 @@ def _forget(atom_id: str) -> None:
         index["meta"]["total_atoms"] = len(index["atoms"])
     _save_json("index.json", index)
 
-    # Remove from tag_index.json
-    tag_index = _load_json(os.path.join("memory", "index", "tag_index.json"))
-    tags_to_remove = []
-    for tag, ids in tag_index.items():
-        if atom_id in ids:
-            ids.remove(atom_id)
-        if not ids:
-            tags_to_remove.append(tag)
-    for tag in tags_to_remove:
-        del tag_index[tag]
-    _save_json(os.path.join("memory", "index", "tag_index.json"), tag_index)
+    # Remove from word_index.json
+    word_index = _load_json(os.path.join("memory", "index", "word_index.json"))
+    word_index = {k: [a for a in v if a != atom_id] for k, v in word_index.items()}
+    word_index = {k: v for k, v in word_index.items() if v}
+    _save_json(os.path.join("memory", "index", "word_index.json"), word_index)
 
     # Remove from type_index.json
     type_index = _load_json(os.path.join("memory", "index", "type_index.json"))
@@ -100,42 +95,73 @@ def _forget(atom_id: str) -> None:
 
 
 def _update_skills(atom_dict: dict) -> None:
-    """Update skill files when a new atom is stored (Phase 5)."""
+    """Update skill files when a new atom is stored.
+    Uses Claude to intelligently merge new info into skill files.
+    Falls back to simple append if the API call fails."""
     index = _load_json("index.json")
     skills = index.get("skills", {})
     atom_tags = [t.lower() for t in atom_dict.get("tags", [])]
     atom_type = atom_dict.get("type", "")
     today = date.today().isoformat()
 
+    # Map atom type to target file and file_type label
+    type_to_file = {
+        "pattern": ("core.md", "core"),
+        "preference": ("core.md", "core"),
+        "fix": ("failures.md", "failures"),
+        "correction": ("failures.md", "failures"),
+        "constraint": ("edge_cases.md", "edge_cases"),
+    }
+
+    if atom_type not in type_to_file:
+        return
+
+    target_filename, file_type = type_to_file[atom_type]
+
+    # Build the new atom's text
+    new_text = atom_dict.get("content", "")
+    if atom_dict.get("content_path"):
+        detail_full = os.path.join(CSARA_DIR, atom_dict["content_path"])
+        if os.path.exists(detail_full):
+            with open(detail_full, "r", encoding="utf-8") as f:
+                detail_text = f.read().strip()
+            if detail_text:
+                new_text += f"\n{detail_text}"
+
     for skill_name, skill_info in skills.items():
         trigger_kws = [kw.lower() for kw in skill_info.get("trigger_keywords", [])]
         if not any(tag in trigger_kws for tag in atom_tags):
             continue
 
-        if atom_type in ("fix", "correction"):
-            failures_path = os.path.join(CSARA_DIR, "skills", skill_name, "failures.md")
-            if os.path.exists(failures_path):
-                content = atom_dict.get("content", "")
-                detail_text = ""
-                if atom_dict.get("content_path"):
-                    detail_full = os.path.join(CSARA_DIR, atom_dict["content_path"])
-                    if os.path.exists(detail_full):
-                        with open(detail_full, "r", encoding="utf-8") as f:
-                            detail_text = f.read().strip()
+        target_path = os.path.join(CSARA_DIR, "skills", skill_name, target_filename)
+        if not os.path.exists(target_path):
+            continue
 
-                entry = f"\n\n## {today}\n{content}"
-                if detail_text:
-                    entry += f"\n{detail_text}"
+        # Read existing file content
+        with open(target_path, "r", encoding="utf-8") as f:
+            existing_content = f.read()
 
-                with open(failures_path, "a", encoding="utf-8") as f:
+        # Ask Claude to merge intelligently
+        result = update_skill_file(existing_content, file_type, new_text, atom_type)
+
+        if result is None:
+            # NO_CHANGE — info already covered
+            continue
+        elif result == "":
+            # API failure — fall back to simple append
+            if file_type == "failures":
+                entry = f"\n\n## {today}\n{new_text}"
+                with open(target_path, "a", encoding="utf-8") as f:
                     f.write(entry)
-
-        elif atom_type == "pattern":
-            core_path = os.path.join(CSARA_DIR, "skills", skill_name, "core.md")
-            if os.path.exists(core_path):
-                content = atom_dict.get("content", "")
-                with open(core_path, "a", encoding="utf-8") as f:
-                    f.write(f"\n- {content}")
+            else:
+                with open(target_path, "a", encoding="utf-8") as f:
+                    f.write(f"\n- {new_text}")
+        else:
+            # Claude returned updated content — overwrite
+            with open(target_path, "w", encoding="utf-8") as f:
+                f.write(result)
+                if not result.endswith("\n"):
+                    f.write("\n")
 
 
 def _forget_skill(skill_name: str) -> None:
@@ -283,22 +309,8 @@ def main():
     _dbg(f"output: {args.output!r}", debug)
 
     # --- Step 1: Pure-code similarity check BEFORE any Claude call ---
-    stop_words = {
-        "the", "a", "an", "is", "it", "to", "of", "in", "for", "and", "or",
-        "how", "what", "why", "i", "my", "we", "this", "that",
-        "do", "does", "did", "was", "were", "be", "been", "being",
-        "have", "has", "had", "not", "no", "but", "so", "if", "when",
-        "where", "which", "who", "whom", "there", "here", "then",
-        "can", "could", "would", "should", "will", "shall", "may", "might",
-        "with", "from", "by", "on", "at", "as", "into", "about",
-        "than", "too", "very", "just", "only", "also", "any", "all",
-        "are", "am", "our", "your", "its", "their", "some", "set",
-        "get", "got", "put", "use", "used", "using", "make", "need",
-        "properly", "correctly", "handle", "want", "like", "way"
-    }
     raw_text = f"{args.input} {args.output}"
-    keywords = [w for w in re.sub(r"[^\w\s]", "", raw_text.lower()).split()
-                if w and w not in stop_words]
+    keywords = extract_keywords(raw_text)
     _dbg(f"extracted keywords: {keywords}", debug)
 
     hits = keyword_search(keywords) if keywords else {}
@@ -306,7 +318,6 @@ def main():
 
     dup_id = None
     dup_content = ""
-    dup_tags = []
     if hits:
         index = _load_json("index.json")
         existing_atoms = index.get("atoms", {})
@@ -321,14 +332,13 @@ def main():
             if min_len > 0 and len(shared_words) / min_len > 0.4:
                 dup_id = aid
                 dup_content = info.get("content", "")
-                dup_tags = info.get("tags", [])
                 _dbg(f"potential dup: {aid} (word overlap: {len(shared_words)}/{min_len})", debug)
                 break
 
     # --- Step 2: Branch based on dup detection ---
     if dup_id:
         _dbg(f"dup found: {dup_id}, calling Claude judge...", debug)
-        replacement = judge_duplicate(args.input, args.output, dup_content, dup_tags)
+        replacement = judge_duplicate(args.input, args.output, dup_content, [])
         if replacement is None:
             _dbg(f"judge says KEEP old {dup_id}", debug)
             print(f"CSara: {dup_id} already covers this, skipped.")
@@ -397,22 +407,8 @@ def run_list_skills() -> str:
 
 def _do_store(task_input: str, task_output: str, debug: bool) -> None:
     """Core store logic extracted from main()."""
-    stop_words = {
-        "the", "a", "an", "is", "it", "to", "of", "in", "for", "and", "or",
-        "how", "what", "why", "i", "my", "we", "this", "that",
-        "do", "does", "did", "was", "were", "be", "been", "being",
-        "have", "has", "had", "not", "no", "but", "so", "if", "when",
-        "where", "which", "who", "whom", "there", "here", "then",
-        "can", "could", "would", "should", "will", "shall", "may", "might",
-        "with", "from", "by", "on", "at", "as", "into", "about",
-        "than", "too", "very", "just", "only", "also", "any", "all",
-        "are", "am", "our", "your", "its", "their", "some", "set",
-        "get", "got", "put", "use", "used", "using", "make", "need",
-        "properly", "correctly", "handle", "want", "like", "way"
-    }
     raw_text = f"{task_input} {task_output}"
-    keywords = [w for w in re.sub(r"[^\w\s]", "", raw_text.lower()).split()
-                if w and w not in stop_words]
+    keywords = extract_keywords(raw_text)
     _dbg(f"extracted keywords: {keywords}", debug)
 
     hits = keyword_search(keywords) if keywords else {}
@@ -420,7 +416,6 @@ def _do_store(task_input: str, task_output: str, debug: bool) -> None:
 
     dup_id = None
     dup_content = ""
-    dup_tags = []
     if hits:
         index = _load_json("index.json")
         existing_atoms = index.get("atoms", {})
@@ -434,13 +429,12 @@ def _do_store(task_input: str, task_output: str, debug: bool) -> None:
             if min_len > 0 and len(shared_words) / min_len > 0.4:
                 dup_id = aid
                 dup_content = info.get("content", "")
-                dup_tags = info.get("tags", [])
                 _dbg(f"potential dup: {aid} (word overlap: {len(shared_words)}/{min_len})", debug)
                 break
 
     if dup_id:
         _dbg(f"dup found: {dup_id}, calling Claude judge...", debug)
-        replacement = judge_duplicate(task_input, task_output, dup_content, dup_tags)
+        replacement = judge_duplicate(task_input, task_output, dup_content, [])
         if replacement is None:
             _dbg(f"judge says KEEP old {dup_id}", debug)
             print(f"CSara: {dup_id} already covers this, skipped.")

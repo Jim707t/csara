@@ -23,3 +23,6 @@ csara/.venv/
 **/__pycache__/
 **/*.pyc
 **/*.pyo
+
+# VS Code
+.vscode/mcp.json

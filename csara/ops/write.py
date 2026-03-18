@@ -5,6 +5,33 @@ from datetime import date
 
 CSARA_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+STOP_WORDS = {
+    "the", "a", "an", "is", "it", "to", "of", "in", "for", "and", "or",
+    "how", "what", "why", "i", "my", "we", "this", "that",
+    "do", "does", "did", "was", "were", "be", "been", "being",
+    "have", "has", "had", "not", "no", "but", "so", "if", "when",
+    "where", "which", "who", "whom", "there", "here", "then",
+    "can", "could", "would", "should", "will", "shall", "may", "might",
+    "with", "from", "by", "on", "at", "as", "into", "about",
+    "than", "too", "very", "just", "only", "also", "any", "all",
+    "are", "am", "our", "your", "its", "their", "some", "set",
+    "get", "got", "put", "use", "used", "using", "make", "need",
+    "properly", "correctly", "handle", "want", "like", "way",
+}
+
+
+def extract_keywords(text: str) -> list[str]:
+    """Extract meaningful keywords from text, filtering stop words."""
+    words = re.sub(r"[^\w\s\-]", " ", text.lower()).split()
+    seen = set()
+    result = []
+    for w in words:
+        w = w.strip("-")
+        if w and w not in STOP_WORDS and len(w) > 1 and w not in seen:
+            seen.add(w)
+            result.append(w)
+    return result
+
 
 def _next_atom_id() -> str:
     atoms_dir = os.path.join(CSARA_DIR, "memory", "atoms")
@@ -81,17 +108,7 @@ def write_atom(atom_dict: dict) -> str:
     index["meta"]["total_atoms"] = len(index["atoms"])
     _save_json("index.json", index)
 
-    # 3. Update tag_index.json
-    tag_index = _load_json(os.path.join("memory", "index", "tag_index.json"))
-    for tag in atom_dict.get("tags", []):
-        tag_lower = tag.lower()
-        if tag_lower not in tag_index:
-            tag_index[tag_lower] = []
-        if atom_id not in tag_index[tag_lower]:
-            tag_index[tag_lower].append(atom_id)
-    _save_json(os.path.join("memory", "index", "tag_index.json"), tag_index)
-
-    # 4. Update type_index.json
+    # 3. Update type_index.json
     type_index = _load_json(os.path.join("memory", "index", "type_index.json"))
     atom_type = atom_dict.get("type", "")
     if atom_type:
@@ -101,12 +118,41 @@ def write_atom(atom_dict: dict) -> str:
             type_index[atom_type].append(atom_id)
     _save_json(os.path.join("memory", "index", "type_index.json"), type_index)
 
-    # 5. Update graph.json
+    # 4. Update graph.json
     graph = _load_json(os.path.join("memory", "index", "graph.json"))
     graph[atom_id] = atom_dict.get("edges", {})
     _save_json(os.path.join("memory", "index", "graph.json"), graph)
 
+    # 5. Update word_index.json (full-text keyword index)
+    _update_word_index(atom_id, atom_dict)
+
     return atom_id
+
+
+def _update_word_index(atom_id: str, atom_dict: dict) -> None:
+    """Extract keywords from all text fields and index them."""
+    parts = [
+        atom_dict.get("content", ""),
+        atom_dict.get("source_task", ""),
+    ]
+    # Include detail file if it exists
+    content_path = atom_dict.get("content_path")
+    if content_path:
+        detail_full = os.path.join(CSARA_DIR, content_path)
+        if os.path.exists(detail_full):
+            with open(detail_full, "r", encoding="utf-8") as f:
+                parts.append(f.read())
+
+    all_text = " ".join(parts)
+    keywords = extract_keywords(all_text)
+
+    word_index = _load_json(os.path.join("memory", "index", "word_index.json"))
+    for kw in keywords:
+        if kw not in word_index:
+            word_index[kw] = []
+        if atom_id not in word_index[kw]:
+            word_index[kw].append(atom_id)
+    _save_json(os.path.join("memory", "index", "word_index.json"), word_index)
 
 
 def replace_atom(old_id: str, new_atom_dict: dict) -> str:
@@ -118,15 +164,11 @@ def replace_atom(old_id: str, new_atom_dict: dict) -> str:
         with open(old_full, "r", encoding="utf-8") as f:
             old_atom = json.load(f)
 
-        # Remove old tags from tag_index
-        tag_index = _load_json(os.path.join("memory", "index", "tag_index.json"))
-        for tag in old_atom.get("tags", []):
-            tl = tag.lower()
-            if tl in tag_index and old_id in tag_index[tl]:
-                tag_index[tl].remove(old_id)
-                if not tag_index[tl]:
-                    del tag_index[tl]
-        _save_json(os.path.join("memory", "index", "tag_index.json"), tag_index)
+        # Remove old words from word_index
+        word_index = _load_json(os.path.join("memory", "index", "word_index.json"))
+        word_index = {k: [a for a in v if a != old_id] for k, v in word_index.items()}
+        word_index = {k: v for k, v in word_index.items() if v}
+        _save_json(os.path.join("memory", "index", "word_index.json"), word_index)
 
         # Remove old type from type_index
         type_index = _load_json(os.path.join("memory", "index", "type_index.json"))
@@ -188,5 +230,8 @@ def replace_atom(old_id: str, new_atom_dict: dict) -> str:
     graph = _load_json(os.path.join("memory", "index", "graph.json"))
     graph[old_id] = new_atom_dict.get("edges", {})
     _save_json(os.path.join("memory", "index", "graph.json"), graph)
+
+    # Update word_index
+    _update_word_index(old_id, new_atom_dict)
 
     return old_id
