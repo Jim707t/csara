@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from mcp.server.fastmcp import FastMCP
 from search import run_search
-from store import run_store, run_forget, run_forget_skill, run_list_skills, run_create_skill
+from store import run_store, run_forget, run_forget_skill, run_list_skills, run_create_skill, run_update
 
 mcp = FastMCP("csara")
 
@@ -76,6 +76,18 @@ def csara_create_skill(name: str, summary: str, keywords: list[str], core_rules:
     return run_create_skill(name, summary, keywords, core_rules)
 
 
+@mcp.tool()
+def csara_update(atom_id: str, new_content: str) -> str:
+    """Update an existing memory atom with new content. Use this when csara_search
+    returns a memory that is outdated, incorrect, or needs correction.
+    The atom keeps its ID but gets new content, tags, and re-indexed keywords.
+
+    Args:
+        atom_id: The memory atom ID to update (e.g. mem_001)
+        new_content: The corrected/updated information to replace the old content
+    """
+    return run_update(atom_id, new_content)
+
+
 if __name__ == "__main__":
-    mcp.run(transport="stdio")
     mcp.run(transport="stdio")

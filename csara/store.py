@@ -277,6 +277,8 @@ def main():
     parser.add_argument("--input", help="Task input description")
     parser.add_argument("--output", help="Task output description")
     parser.add_argument("--forget", help="Atom ID to forget")
+    parser.add_argument("--update", help="Atom ID to update")
+    parser.add_argument("--content", help="New content for --update")
     parser.add_argument("--forget-skill", help="Skill name to delete")
     parser.add_argument("--list-skills", action="store_true", help="List all skills")
     parser.add_argument("--debug", action="store_true", help="Print debug trace")
@@ -299,6 +301,13 @@ def main():
     if args.forget:
         _dbg(f"forget: {args.forget}", debug)
         _forget(args.forget)
+        return
+
+    if args.update:
+        if not args.content:
+            print("Error: --content is required with --update.", file=sys.stderr)
+            sys.exit(1)
+        _update_memory(args.update, args.content)
         return
 
     if not args.input or not args.output:
@@ -403,6 +412,59 @@ def run_list_skills() -> str:
     with contextlib.redirect_stdout(buf):
         _list_skills()
     return buf.getvalue().strip() or "CSara: no skills registered."
+
+
+def _update_memory(atom_id: str, new_content: str) -> None:
+    """Update an existing memory atom with new content, preserving its ID."""
+    atom_path = os.path.join(CSARA_DIR, "memory", "atoms", f"{atom_id}.json")
+    if not os.path.exists(atom_path):
+        print(f"CSara: {atom_id} not found.")
+        return
+
+    with open(atom_path, "r", encoding="utf-8") as f:
+        old_atom = json.load(f)
+
+    # Build updated atom using consolidator to extract structured fields
+    result = consolidate(f"Update {atom_id}", new_content)
+    if result is None:
+        # Consolidator rejected — do a simple content swap keeping old metadata
+        result = dict(old_atom)
+        result["content"] = new_content
+        result["tags"] = old_atom.get("tags", [])
+        result["type"] = old_atom.get("type", "pattern")
+
+    # Remove old detail file if exists
+    old_detail = os.path.join(CSARA_DIR, "memory", "detail", f"{atom_id}.md")
+    if os.path.exists(old_detail):
+        os.remove(old_detail)
+
+    replace_atom(atom_id, result)
+
+    # Save detail if content is long
+    if len(new_content) > DETAIL_THRESHOLD:
+        detail_rel = os.path.join("memory", "detail", f"{atom_id}.md")
+        detail_full = os.path.join(CSARA_DIR, detail_rel)
+        os.makedirs(os.path.dirname(detail_full), exist_ok=True)
+        with open(detail_full, "w", encoding="utf-8") as f:
+            f.write(new_content)
+        with open(atom_path, "r", encoding="utf-8") as f:
+            atom = json.load(f)
+        atom["content_path"] = detail_rel
+        with open(atom_path, "w", encoding="utf-8") as f:
+            json.dump(atom, f, indent=2)
+            f.write("\n")
+
+    _update_skills(result)
+    print(f"CSara: updated {atom_id}.")
+
+
+def run_update(atom_id: str, new_content: str) -> str:
+    """Callable entry point for MCP server."""
+    import io, contextlib
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        _update_memory(atom_id, new_content)
+    return buf.getvalue().strip() or "CSara: done."
 
 
 def _do_store(task_input: str, task_output: str, debug: bool) -> None:

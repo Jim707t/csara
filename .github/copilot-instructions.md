@@ -30,8 +30,16 @@ Add --debug to any command to see the full internal trace (keywords, hits, AI de
 python csara/search.py --q "your query" --debug
 python csara/store.py --input "..." --output "..." --debug
 
+## To update a memory
+When search returns a memory that is outdated or incorrect, update it:
+python csara/store.py --update mem_XXX --content "corrected information here"
+
+Or via MCP: csara_update(atom_id, new_content)
+
 ## Rules
 - Never skip the search step even if you think you know the answer
 - Never skip the store step even if the task felt routine
+- If search returns memories that are outdated or wrong, update or forget them
 - If search returns nothing, proceed normally and still run store after
 - Do not summarize CSara output, inject it as-is into your context
+- Do not pull all memories for cleanup — only act on what search returns

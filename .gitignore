@@ -24,5 +24,8 @@ csara/.venv/
 **/*.pyc
 **/*.pyo
 
+# GitHub Copilot instructions
+.github/copilot-instructions.md
+
 # VS Code
 .vscode/mcp.json
