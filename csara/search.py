@@ -8,23 +8,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from ops.search import keyword_search
 from ops.read import read_atoms
+from ops.write import STOP_WORDS
 from api.agents.retrieval import get_relevant_atoms, get_relevant_skills
 
 CSARA_DIR = os.path.dirname(os.path.abspath(__file__))
-
-STOP_WORDS = {
-    "the", "a", "an", "is", "it", "to", "of", "in", "for", "and", "or",
-    "how", "what", "why", "i", "my", "we", "this", "that",
-    "do", "does", "did", "was", "were", "be", "been", "being",
-    "have", "has", "had", "not", "no", "but", "so", "if", "when",
-    "where", "which", "who", "whom", "there", "here", "then",
-    "can", "could", "would", "should", "will", "shall", "may", "might",
-    "with", "from", "by", "on", "at", "as", "into", "about",
-    "than", "too", "very", "just", "only", "also", "any", "all",
-    "are", "am", "our", "your", "its", "their", "some", "set",
-    "get", "got", "put", "use", "used", "using", "make", "need",
-    "properly", "correctly", "handle", "want", "like", "way"
-}
 
 DEBUG_WORDS = {
     "debug", "error", "fix", "bug", "traceback", "exception",

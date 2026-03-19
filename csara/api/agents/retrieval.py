@@ -75,16 +75,87 @@ def get_relevant_atoms(query: str, index_content: dict, keyword_hits: dict) -> l
     return sorted_ids[:8]
 
 
+SKILL_STOP_WORDS = {
+    "and", "the", "a", "an", "for", "of", "in", "to", "is", "with", "or",
+    "on", "by", "at", "as", "from", "it", "be", "was", "are", "that", "this",
+    "its", "not", "but", "so", "if", "no", "all", "any", "has", "have", "had",
+}
+
+
 def get_relevant_skills(query: str, index_content: dict) -> list:
     skills = index_content.get("skills", {})
+    if not skills:
+        return []
+
     query_lower = query.lower()
-    query_words = set(re.sub(r"[^\w\s]", "", query_lower).split())
+    query_clean = re.sub(r"[^\w\s]", "", query_lower)
+    query_words = set(query_clean.split())
 
     skill_scores = {}
     for skill_name, skill_info in skills.items():
         keywords = skill_info.get("trigger_keywords", [])
-        count = sum(1 for kw in keywords if kw.lower() in query_words)
-        if count > 0:
-            skill_scores[skill_name] = count
+        score = 0
 
-    return sorted(skill_scores.keys(), key=lambda x: skill_scores[x], reverse=True)
+        for kw in keywords:
+            kw_lower = kw.lower()
+
+            # Multi-word keyword: check if it appears in the full query string
+            if " " in kw_lower:
+                if kw_lower in query_lower:
+                    score += 2
+                continue
+
+            # Exact match
+            if kw_lower in query_words:
+                score += 2
+                continue
+
+            # Substring match (min 4 chars): query word contains keyword or vice versa
+            for qw in query_words:
+                if len(kw_lower) >= 4 and kw_lower in qw:
+                    score += 1
+                    break
+                if len(qw) >= 4 and qw in kw_lower:
+                    score += 1
+                    break
+
+        # Summary word matching (+0.5 per overlapping word)
+        summary = skill_info.get("summary", "").lower()
+        summary_words = set(re.sub(r"[^\w\s]", "", summary).split()) - SKILL_STOP_WORDS
+        overlap = query_words & summary_words
+        score += len(overlap) * 0.5
+
+        if score > 0:
+            skill_scores[skill_name] = score
+
+    _dbg(f"skill_scores: {skill_scores}")
+
+    if skill_scores:
+        return sorted(skill_scores.keys(), key=lambda x: skill_scores[x], reverse=True)
+
+    # Claude fallback: only when keyword matching found nothing
+    substantive_words = [w for w in query_words if len(w) > 2]
+    if len(substantive_words) < 2:
+        return []
+
+    _dbg("no skills matched via keywords, trying Claude fallback")
+    skill_list = "\n".join(
+        f"- {name}: {info.get('summary', '')}"
+        for name, info in skills.items()
+    )
+
+    try:
+        response = call_claude(
+            "You select relevant skills for a task. Return ONLY a JSON array of skill names. Return [] if none apply. Be selective.",
+            f"Skills:\n{skill_list}\n\nQuery: {query}",
+            max_tokens=100
+        )
+        result = json.loads(response.strip())
+        if isinstance(result, list):
+            valid = [s for s in result if s in skills]
+            _dbg(f"Claude fallback returned: {valid}")
+            return valid
+    except Exception as e:
+        _dbg(f"Claude skill fallback failed: {e}")
+
+    return []

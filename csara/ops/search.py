@@ -27,13 +27,17 @@ def keyword_search(keywords: list) -> dict:
 
         # Also check substring matches in word_index keys
         # e.g. searching "sqrt" matches "math-sqrt" or "sqrt144"
+        # Min 4 chars to avoid noisy short-word matches ("is" in "list")
+        if len(kw) < 4:
+            continue
         for indexed_word, atom_ids in word_index.items():
             if indexed_word == kw:
                 continue  # already counted
+            if len(indexed_word) < 4:
+                continue
             if kw in indexed_word or indexed_word in kw:
                 for aid in atom_ids:
-                    if aid not in scores or scores[aid] < 1:
-                        scores[aid] = scores.get(aid, 0) + 0.5
+                    scores[aid] = scores.get(aid, 0) + 0.5
 
     if not scores:
         return {}

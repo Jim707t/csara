@@ -5,7 +5,26 @@ Use it on every task, every session, without being asked.
 
 ## Before starting any task
 Run this first and read the output before touching any code:
-python csara/search.py --q "brief description of what you are about to do"
+python csara/search.py --q "keyword-rich query here"
+
+**Query construction rules — maximize skill and memory retrieval:**
+- **Always include the project name** if working on a specific project (e.g., "mostbased", "jimpage")
+- **Always include technology/framework names** (e.g., "sveltekit", "supabase", "python", "next.js", "express")
+- **Include the domain area** (e.g., "vote system", "deployment", "database", "frontend", "ai integration", "encryption")
+- **Use specific technical terms** over vague descriptions
+- **Stack keywords**, don't write sentences
+
+Good queries (keyword-rich, specific):
+- "mostbased sveltekit frontend vote component state"
+- "supabase database rls rpc migration schema"
+- "python async debug traceback error"
+- "mostbased deployment vercel render env secrets"
+- "jimpage next.js framer-motion glassmorphism space-theme"
+
+Bad queries (too vague, natural-language):
+- "implement the feature the user asked for"
+- "fix the bug in the project"
+- "working on frontend stuff"
 
 Inject the output into your context. It contains relevant memory and skills.
 
@@ -36,10 +55,28 @@ python csara/store.py --update mem_XXX --content "corrected information here"
 
 Or via MCP: csara_update(atom_id, new_content)
 
+## Maintenance — when to update, forget, or leave alone
+Only act on memories that search returns. Never pull all memories for cleanup.
+
+**Update** when a returned memory:
+- Contains info that was true before but is now wrong (e.g., old architecture, changed API, renamed function)
+- Has incomplete info that you can now make more specific or accurate
+- Describes a bug fix that has been superseded by a better fix
+
+**Forget** when a returned memory:
+- Is completely wrong and not worth correcting
+- Is redundant — its content has been absorbed into a skill already
+- Describes something that no longer exists (deleted feature, removed dependency)
+
+**Leave alone** — do NOT update or forget memories that:
+- Are patterns, preferences, or conventions still being followed
+- Describe a fix that is still accurate, even if old
+- Are simply not relevant to the current task (irrelevant ≠ outdated)
+
 ## Rules
 - Never skip the search step even if you think you know the answer
 - Never skip the store step even if the task felt routine
-- If search returns memories that are outdated or wrong, update or forget them
 - If search returns nothing, proceed normally and still run store after
 - Do not summarize CSara output, inject it as-is into your context
 - Do not pull all memories for cleanup — only act on what search returns
+- Skills auto-update when you store — new patterns/fixes merge into matching skill files automatically
