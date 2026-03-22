@@ -134,6 +134,7 @@ def _update_word_index(atom_id: str, atom_dict: dict) -> None:
     parts = [
         atom_dict.get("content", ""),
         atom_dict.get("source_task", ""),
+        " ".join(atom_dict.get("tags", [])),
     ]
     # Include detail file if it exists
     content_path = atom_dict.get("content_path")

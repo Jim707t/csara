@@ -15,11 +15,17 @@ mcp = FastMCP("csara")
 @mcp.tool()
 def csara_search(query: str) -> str:
     """Search CSara memory for relevant memories and skills before starting any task.
-    Call this BEFORE you begin working on something, with a brief description of
-    what you are about to do. Returns relevant past memories and skill knowledge.
+    Call this BEFORE you begin working. Uses BM25 keyword scoring for retrieval.
+
+    Query tips for best results:
+    - Always include the project name (e.g. "mostbased", "jimpage")
+    - Include technology names (e.g. "sveltekit", "supabase", "python")
+    - Stack keywords, don't write sentences
+    - Good: "mostbased sveltekit frontend vote component"
+    - Bad: "implement the feature the user asked for"
 
     Args:
-        query: Brief description of what you are about to do
+        query: Keyword-rich description of what you are about to do
     """
     return run_search(query)
 

@@ -27,6 +27,16 @@ Rules:
 - If nothing is relevant, return: []
 - Aim for 2-4 results. More than 5 means you aren't filtering enough."""
 
+SKILL_RERANK_SYSTEM_PROMPT = """You are a strict skill relevance filter. Given a search query and candidate skills with summaries, return ONLY the names of skills that DIRECTLY apply to the query.
+
+Rules:
+- Only keep skills whose domain clearly matches the query intent
+- A skill that shares a generic word (e.g. "deployment") but covers a different project must be removed
+- Return ONLY a JSON array of skill names, nothing else
+- Example: ["python", "mostbased-core"]
+- If nothing is relevant, return: []
+- Aim for 1-3 results."""
+
 
 def get_relevant_atoms(query: str, index_content: dict, keyword_hits: dict) -> list:
     sorted_ids = sorted(keyword_hits.keys(), key=lambda x: keyword_hits[x], reverse=True)
@@ -81,6 +91,38 @@ SKILL_STOP_WORDS = {
     "its", "not", "but", "so", "if", "no", "all", "any", "has", "have", "had",
 }
 
+# Words too generic to contribute to skill/summary matching
+SKILL_SUMMARY_STOP_WORDS = SKILL_STOP_WORDS | {
+    "error", "errors", "codes", "code", "rules", "covers", "operating",
+    "patterns", "conventions", "system", "uses", "using", "based",
+    "project", "personal", "specific", "knowledge", "domain",
+}
+
+# Keywords too generic to justify matching a project-specific skill on their own
+GENERIC_PROJECT_KEYWORDS = {
+    "project", "frontend", "backend", "architecture",
+    "deployment", "deploy", "tailwind", "css", "design", "build",
+    "production", "environment", "config", "setup",
+    "component", "components", "state", "store", "styling", "layout",
+    "routing", "api", "server", "client", "database", "migration",
+}
+
+
+def _normalize_kw(text: str) -> str:
+    """Normalize a keyword for comparison: lowercase, remove non-alphanum except hyphens."""
+    return re.sub(r"[^\w\-]", "", text.lower())
+
+
+def _is_project_skill(skill_name: str) -> bool:
+    """Detect project-specific skills (vs generic technology skills)."""
+    tech_skills = {"python", "javascript", "typescript", "rust", "go", "java", "frontend", "backend"}
+    return skill_name not in tech_skills
+
+
+def _extract_project_name(skill_name: str) -> str:
+    """Extract project base name from skill name (e.g., 'mostbased-core' -> 'mostbased')."""
+    return skill_name.split("-")[0]
+
 
 def get_relevant_skills(query: str, index_content: dict) -> list:
     skills = index_content.get("skills", {})
@@ -90,48 +132,110 @@ def get_relevant_skills(query: str, index_content: dict) -> list:
     query_lower = query.lower()
     query_clean = re.sub(r"[^\w\s]", "", query_lower)
     query_words = set(query_clean.split())
+    # Also keep hyphenated forms for matching
+    query_hyphenated = set(re.sub(r"[^\w\s\-]", "", query_lower).split())
 
     skill_scores = {}
     for skill_name, skill_info in skills.items():
         keywords = skill_info.get("trigger_keywords", [])
         score = 0
+        exact_matches = 0
+        has_specific_match = False  # non-generic keyword matched
 
         for kw in keywords:
             kw_lower = kw.lower()
+            kw_normalized = _normalize_kw(kw)
 
             # Multi-word keyword: check if it appears in the full query string
             if " " in kw_lower:
                 if kw_lower in query_lower:
                     score += 2
+                    exact_matches += 1
+                    if kw_lower not in GENERIC_PROJECT_KEYWORDS:
+                        has_specific_match = True
                 continue
 
-            # Exact match
-            if kw_lower in query_words:
+            # Exact match (try both normalized and original)
+            if kw_lower in query_words or kw_normalized in query_words or kw_lower in query_hyphenated:
                 score += 2
+                exact_matches += 1
+                if kw_lower not in GENERIC_PROJECT_KEYWORDS:
+                    has_specific_match = True
                 continue
 
-            # Substring match (min 4 chars): query word contains keyword or vice versa
+            # Also try normalized query words against normalized keyword
             for qw in query_words:
-                if len(kw_lower) >= 4 and kw_lower in qw:
-                    score += 1
+                if kw_normalized == qw or _normalize_kw(kw) == _normalize_kw(qw):
+                    score += 2
+                    exact_matches += 1
+                    if kw_lower not in GENERIC_PROJECT_KEYWORDS:
+                        has_specific_match = True
                     break
-                if len(qw) >= 4 and qw in kw_lower:
-                    score += 1
-                    break
+            else:
+                # Substring match (min 5 chars): query word contains keyword or vice versa
+                # Only match if the substring is a significant portion of the host word
+                for qw in query_words:
+                    if len(kw_normalized) >= 5 and kw_normalized in qw and len(kw_normalized) / len(qw) > 0.5:
+                        score += 1
+                        break
+                    if len(qw) >= 5 and qw in kw_normalized and len(qw) / len(kw_normalized) > 0.5:
+                        score += 1
+                        break
 
-        # Summary word matching (+0.5 per overlapping word)
+        # Summary word matching (+0.5 per overlapping word, using stricter stop words)
         summary = skill_info.get("summary", "").lower()
-        summary_words = set(re.sub(r"[^\w\s]", "", summary).split()) - SKILL_STOP_WORDS
+        summary_words = set(re.sub(r"[^\w\s]", "", summary).split()) - SKILL_SUMMARY_STOP_WORDS
         overlap = query_words & summary_words
         score += len(overlap) * 0.5
 
-        if score > 0:
-            skill_scores[skill_name] = score
+        # Project-specific skills need stronger signals to match
+        if _is_project_skill(skill_name):
+            project_name = _extract_project_name(skill_name)
+            has_project_name = project_name in query_words or project_name in query_lower
+            if has_project_name:
+                # Project name in query: any keyword match is enough
+                if score >= 2:
+                    skill_scores[skill_name] = score
+            elif has_specific_match:
+                # Non-generic keyword matched: likely relevant even without project name
+                if score >= 2:
+                    skill_scores[skill_name] = score
+            elif exact_matches >= 3 and score >= 6:
+                # Only generic keywords matched: need strong evidence from many matches
+                skill_scores[skill_name] = score
+        else:
+            # Technology skills: single keyword match is meaningful
+            if score >= 2:
+                skill_scores[skill_name] = score
 
     _dbg(f"skill_scores: {skill_scores}")
 
     if skill_scores:
-        return sorted(skill_scores.keys(), key=lambda x: skill_scores[x], reverse=True)
+        sorted_skills = sorted(skill_scores.keys(), key=lambda x: skill_scores[x], reverse=True)
+
+        # Rerank with Claude when too many skills matched (>3)
+        if len(sorted_skills) > 3:
+            _dbg(f"too many skill matches ({len(sorted_skills)}), calling Claude reranker")
+            skill_summaries = "\n".join(
+                f"- {name}: {skills[name].get('summary', '')}"
+                for name in sorted_skills
+            )
+            try:
+                response = call_claude(
+                    SKILL_RERANK_SYSTEM_PROMPT,
+                    f"Query: {query}\n\nCandidate skills:\n{skill_summaries}",
+                    max_tokens=150
+                )
+                reranked = json.loads(response.strip())
+                if isinstance(reranked, list):
+                    valid = [s for s in reranked if s in skill_scores]
+                    _dbg(f"skill rerank result: {valid}")
+                    if valid:
+                        return valid
+            except Exception as e:
+                _dbg(f"skill rerank failed: {e}, using score sort")
+
+        return sorted_skills
 
     # Claude fallback: only when keyword matching found nothing
     substantive_words = [w for w in query_words if len(w) > 2]

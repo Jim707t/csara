@@ -20,8 +20,22 @@ DEBUG_WORDS = {
 
 
 def _extract_keywords(query: str) -> list:
-    words = re.sub(r"[^\w\s]", "", query.lower()).split()
-    return [w for w in words if w and w not in STOP_WORDS]
+    words = re.sub(r"[^\w\s\-]", " ", query.lower()).split()
+    seen = set()
+    result = []
+    for w in words:
+        w = w.strip("-")
+        if w and w not in STOP_WORDS and len(w) > 1 and w not in seen:
+            seen.add(w)
+            result.append(w)
+            # Also add hyphenated parts as separate keywords
+            if "-" in w:
+                for part in w.split("-"):
+                    part = part.strip()
+                    if part and part not in STOP_WORDS and len(part) > 1 and part not in seen:
+                        seen.add(part)
+                        result.append(part)
+    return result
 
 
 def _load_json(rel_path: str) -> dict:
