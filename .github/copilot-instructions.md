@@ -32,7 +32,15 @@ Inject the output into your context. It contains relevant memory and skills.
 Summarize what you were asked and what you produced, then run:
 python csara/store.py --input "what you were asked to do" --output "what you built, any decision made, any fix applied, any pattern used"
 
-Keep both --input and --output under 3 sentences. Be specific, not generic.
+Keep both --input and --output under 3 sentences. Preserve specific file names, function names, commands, and table names.
+
+Good --output (specific, actionable):
+- "Updated csara.instructions.md and copilot-instructions.md: added csara_update tool, added update/forget/leave-alone decision rules with 3 bullets each, kept global file under ~500 words"
+- "Fixed 401 in classifyControversyWeights.js: read API key from ai_provider_keys table instead of ai_config.api_key_encrypted"
+
+Bad --output (vague, lost details):
+- "Rewrote instruction files to include complete tool inventories and structured decision trees"
+- "Fixed authentication error in the AI classifier by using the correct table"
 
 ## To forget a memory
 python csara/store.py --forget mem_XXX
@@ -72,6 +80,19 @@ Only act on memories that search returns. Never pull all memories for cleanup.
 - Are patterns, preferences, or conventions still being followed
 - Describe a fix that is still accurate, even if old
 - Are simply not relevant to the current task (irrelevant ≠ outdated)
+
+## Periodic cleanup
+For systemic maintenance that search-driven cleanup can't catch (redundant pairs, skill-covered atoms, meta-noise, stale/vague memories), run:
+python csara/cleanup.py
+
+This sends all atoms in batches to Claude for analysis. Use --apply to delete recommended atoms (with confirmation). See cleanup_command.txt for full usage.
+
+## Architecture notes for contributors
+- Search pipeline: keyword extraction → BM25 scoring (ops/search.py) → top 20 sent to Claude reranker (api/agents/retrieval.py) → skill dedup filtering
+- Store pipeline: keyword extraction → BM25 dup check (>40% word overlap) → Claude judge or consolidator (api/agents/consolidator.py) → write atom + update word index + update skills
+- Skill retrieval is separate from memory retrieval — uses keyword scoring with project-skill vs tech-skill distinction, no BM25
+- The consolidator classifies atoms into types (preference/fix/pattern/constraint/correction) at store time
+- Keywords are auto-extracted from content into memory/index/word_index.json — no LLM-generated tags
 
 ## Rules
 - Never skip the search step even if you think you know the answer

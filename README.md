@@ -153,4 +153,27 @@ python csara/search.py --q "your query" --debug
 
 ---
 
+---
+
+## Periodic cleanup
+
+Over time, memories accumulate noise: redundant pairs, atoms absorbed into skills, meta-information about CSara itself. Normal Copilot-driven maintenance can't catch these because it only sees what search returns.
+
+Run the cleanup script manually when you want a general refresh:
+
+```bash
+# Dry run — see recommendations, nothing gets deleted
+python csara/cleanup.py
+
+# Apply — delete recommended atoms (asks for confirmation)
+python csara/cleanup.py --apply
+
+# Debug mode — full Claude trace
+python csara/cleanup.py --debug
+```
+
+See `cleanup_command.txt` for full details.
+
+---
+
 Your memories and skills are personal and stay on your machine — they are gitignored. The repo contains only the engine.

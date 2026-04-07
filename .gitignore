@@ -19,6 +19,9 @@ csara/skills/*
 # Python virtual environment
 csara/.venv/
 
+# Test rules and scenarios (personal test data)
+csara/rules/
+
 # Python cache
 **/__pycache__/
 **/*.pyc

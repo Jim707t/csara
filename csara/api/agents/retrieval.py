@@ -22,6 +22,7 @@ Rules:
 - Be aggressive: a memory mentioning "lines" or "files" incidentally is NOT relevant to a query about "counting lines"
 - Only keep memories whose PRIMARY topic matches the query intent
 - A memory about a completely different subject that happens to share a keyword must be removed
+- If a memory's primary subject is a feature, bug, or component from a different project or system than the one the query is about, exclude it — shared keywords are not sufficient for relevance
 - Return ONLY a JSON array of atom IDs, nothing else
 - Example: ["mem_003", "mem_024"]
 - If nothing is relevant, return: []
@@ -49,7 +50,7 @@ def get_relevant_atoms(query: str, index_content: dict, keyword_hits: dict) -> l
 
     # For larger sets, use Claude to filter noise
     _dbg(f"candidates: {len(sorted_ids)} (>5, calling Claude reranker)")
-    top_candidates = sorted_ids[:15]  # send at most 15 to Claude
+    top_candidates = sorted_ids[:20]  # send at most 20 to Claude
 
     # Load atom content for each candidate
     candidate_summaries = []

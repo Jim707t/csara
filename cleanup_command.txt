@@ -1,0 +1,35 @@
+CSara Memory Cleanup
+====================
+Cleans up the memory system by sending ALL atoms (in batches of 25) to Claude,
+which analyzes them for problems that normal search-driven maintenance can't catch.
+
+What it detects:
+- Redundant pairs: two memories covering the same info (keeps the richer one)
+- Skill-covered: memory content already absorbed into a skill file
+- Meta-noise: memories about CSara itself that match too many queries
+- Stale: memories referencing removed features or old architectures
+- Vague: memories that lost specific details during consolidation
+
+Commands (run from project root):
+----------------------------------
+
+1. DRY RUN — see what Claude recommends, nothing gets deleted:
+   python csara/cleanup.py
+
+2. APPLY — actually delete recommended atoms (will ask you to type "yes" first):
+   python csara/cleanup.py --apply
+
+3. DEBUG — same as dry run but prints full Claude trace (keywords, hits, raw responses):
+   python csara/cleanup.py --debug
+
+4. CUSTOM BATCH SIZE — send more/fewer atoms per Claude call (default 25):
+   python csara/cleanup.py --batch-size 15
+
+Notes:
+- Always do a dry run first to review recommendations before applying.
+- "forget" recommendations are safe deletions (clear redundancy/skill overlap).
+- "flag" recommendations need your judgment — Claude isn't sure, just flagging.
+- Each batch costs one Claude API call (~1000 output tokens max).
+- With 226 atoms at batch size 25, that's ~9 API calls per cleanup run.
+- The script uses the same API key from csara/.env (ANTHROPIC_API_KEY).
+- Deleted atoms are fully removed: atom file, detail file, word index, type index, graph.
