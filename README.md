@@ -34,20 +34,29 @@ cd csara
 
 ### 2. Create the virtual environment and install the MCP SDK
 
+**Windows:**
 ```
 python -m venv csara/.venv
-csara\.venv\Scripts\activate       # Windows
-# source csara/.venv/bin/activate  # macOS/Linux
-
+csara\.venv\Scripts\activate
 pip install "mcp[cli]"
 ```
+
+**Linux / macOS (including Fedora):**
+```bash
+python3 -m venv csara/.venv
+source csara/.venv/bin/activate
+pip install "mcp[cli]"
+```
+
+> **Fedora note:** Fedora does not alias `python` to Python 3 by default — always use `python3` explicitly. If `python3` is missing, install it first: `sudo dnf install python3`.
 
 The MCP SDK is the only dependency. All CSara core logic uses Python stdlib only.
 
 ### 3. Add your API key
 
-```
-copy csara\.env.example csara\.env
+```bash
+cp csara/.env.example csara/.env        # Linux / macOS
+copy csara\.env.example csara\.env      # Windows
 ```
 
 Open `csara/.env` and fill in your key:
@@ -150,6 +159,8 @@ python csara/store.py --forget-skill python
 # Add --debug to any command for a full internal trace
 python csara/search.py --q "your query" --debug
 ```
+
+> **Fedora / Linux note:** If you are not inside the activated venv, replace `python` with `python3` in all CLI commands above.
 
 ---
 

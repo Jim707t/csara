@@ -7,6 +7,8 @@ Use it on every task, every session, without being asked.
 Run this first and read the output before touching any code:
 python csara/search.py --q "keyword-rich query here"
 
+> **Fedora / Linux:** Use `python3` instead of `python` if you are not inside the activated venv.
+
 **Query construction rules — maximize skill and memory retrieval:**
 - **Always include the project name** if working on a specific project (e.g., "mostbased", "jimpage")
 - **Always include technology/framework names** (e.g., "sveltekit", "supabase", "python", "next.js", "express")
